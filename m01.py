@@ -1,5 +1,4 @@
 import argparse
-import os
 import time
 
 import jax
@@ -22,7 +21,6 @@ import pandas as pd
 def get_data(filepath, date_filter):
     
     # CSV
-    #d = pd.read_csv(r"/c/Users/brent/Documents/R/Misc_scripts/stocks.csv", index_col=None)
     d = pd.read_csv(filepath, index_col=None)
     d['date_stamp'] = pd.to_datetime(d['date_stamp'], format="%d/%m/%Y")
     
@@ -35,7 +33,7 @@ def get_data(filepath, date_filter):
     Y = d.query('(date_stamp > @min_date) & (date_stamp < @max_date)')['fwd_rtn'].values
     X = d[(d['date_stamp'] > min_date) & (d['date_stamp'] < max_date)].iloc[:, 2:4].values
 
-    return X, Y, idx   # print(X.head()) #
+    return X, Y, idx
 
 
 
@@ -122,7 +120,8 @@ def main(args):
 
     # do prediction
     means, quantiles = predict(data=Y, rng_key=rng_key_predict)
-    pd.DataFrame({'date_stamp': idx, 'Yhat': means, 'lower': quantiles[0, :], 'upper': quantiles[1, :]}).to_csv('m01_preds.csv')
+    pd.DataFrame({'date_stamp': idx, 'Yhat': means, 'lower': quantiles[0, :], 'upper': quantiles[1, :]}) \
+        .to_csv('/c/Users/brent/Documents/R/Misc_scripts/m01_preds.csv')
 
 
 
@@ -143,3 +142,4 @@ if __name__ == "__main__":
 
 
 # python m01.py -d 2021-12-31 -f /c/Users/brent/Documents/R/Misc_scripts/stocks.csv
+# conda activate pytorch_pyro && python ~/numpyro_models/numpyro_models/m01.py
