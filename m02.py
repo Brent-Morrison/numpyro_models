@@ -60,12 +60,41 @@ class AutoEnc(torch.nn.Module):
       return encoded, decoded
 
 
+class AutoEncDyn(torch.nn.Module):
+    def __init__(self, layer_widths):
+        super().__init__()
+
+        # Encoder
+        self.encoder = torch.nn.ModuleList()
+        encz = zip(layer_widths[:-1], layer_widths[1:])
+        *hidden, last = encz
+        for n_in, n_out in hidden:
+            self.encoder.append(torch.nn.Linear(n_in, n_out))
+            self.encoder.append(torch.nn.ReLU())
+        self.encoder.append(torch.nn.Linear(last[0], last[1]))
+
+        # Decoder
+        self.decoder = torch.nn.ModuleList()
+        decz = zip(reversed(layer_widths[1:]), reversed(layer_widths[:-1]))
+        *hidden, last = decz
+        for n_in, n_out in hidden:
+            self.decoder.append(torch.nn.Linear(n_in, n_out))
+            self.decoder.append(torch.nn.ReLU())
+        self.decoder.append(torch.nn.Linear(last[0], last[1]))
+    
+        def forward(self, x):
+            encoded = self.encoder(x)
+            decoded = self.decoder(encoded)
+            return encoded, decoded
+        
+
 
 # Instantiate model & training loop ----------------------------------------------------------------------------------------
 def model(data, epochs):
     
     # Instantiate model
-    model = AutoEnc(data.shape[1])
+    #model = AutoEnc(data.shape[1])
+    model = AutoEnc1(data.shape[1])
     loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr = 1e-1, weight_decay = 1e8)
 
