@@ -2,6 +2,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_datetime64_any_dtype
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -15,19 +16,19 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
 
 # Prepare data
-file_path="/c/Users/brent/Documents/R/Misc_scripts/data_test33/2022-12-11.csv"
+file_path="/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv"
 #file_path = "https://raw.githubusercontent.com/Brent-Morrison/Misc_scripts/master/stock_data.csv"
 df_raw = pd.read_csv(file_path)
-df_raw['date_stamp'] = pd.to_datetime(df_raw['date_stamp'], format="%d/%m/%Y")
-df = df_raw[df_raw['date_stamp'] >= '2017-06-01'].reset_index(drop=True).copy()
+df_raw['date_stamp'] = pd.to_datetime(df_raw['date_stamp'])#, format="%Y/%m/%d")
+df = df_raw[df_raw['date_stamp'] >= '2016-12-31'].reset_index(drop=True).copy()
 ticker = ['symbol']
 date = ['date_stamp']
-ycols = ['fwd_rtn_1m']
-xcols = ['rtn_ari_1m', 'rtn_ari_3m', 'rtn_ari_12m', 'vol_ari_60d', 'vol_ari_120d', 'skew_ari_120d', 'kurt_ari_120d']
+ycols = ['fwd_rtn']
+xcols = ['rtn_ari_1m', 'rtn_ari_3m', 'rtn_ari_12m', 'perc_range_12m', 'perc_pos_12m', 'rtn_from_high_12m', 'vol_ari_60d']
 df.sort_values(by=[ticker[0], date[0]], ascending=[True, True], inplace=True)
-df['fwd_rtn_1m'] = df.groupby('symbol')['adjusted_close'].pct_change(periods=1).shift(periods=-1)
+#df['fwd_rtn_1m'] = df.groupby('symbol')['adjusted_close'].pct_change(periods=1).shift(periods=-1)
 df = df.loc[:, date+ticker+ycols+xcols].copy()
-df_oos = df[df['date_stamp'] >= max(df['date_stamp'])].reset_index(drop=True).copy()
+#df_oos = df[df['date_stamp'] >= max(df['date_stamp'])].reset_index(drop=True).copy()
 df.dropna(inplace=True)
 
 
@@ -50,16 +51,12 @@ class DFLoader(Dataset):
             date(str): date column
         """
         
-        # Read CSV file
-        #df = pd.read_csv(file_path, usecols=date+ycols+xcols)  # include stock ticker
-        #df['date_stamp'] = pd.to_datetime(df['date_stamp'], format="%d/%m/%Y")
-        #df = df[df['date_stamp'] >= date_filter].reset_index(drop=True).copy()
+        # Dataframe
         self.df = df
 
         # Dependent variable ("y") and predictors ("x")
         self.x = torch.from_numpy(df.loc[:, xcols].values)
         self.y = torch.from_numpy(df.loc[:, ycols].values)
-        #self.d = df.loc[:, date].values
         self.d = df[date[0]]
         self.d = pd.to_datetime(self.d, format="%d/%m/%Y")
         self.d = self.d.to_numpy()
@@ -90,25 +87,34 @@ dataset = DFLoader(df, date, ycols, xcols)
 
 class NeuralNetwork(nn.Module):
 
-    def __init__(self, xcols):
+    def __init__(self, layer_widths):
         super(NeuralNetwork, self).__init__()
-        features = len(xcols)
-        hl1_dim = max(round(len(xcols)/2), 2)
-        self.linear_relu_stack = nn.Sequential(
-            # out_features = number of nodes
-            nn.Linear(in_features=features, out_features=features), 
-            nn.ReLU(),
-            nn.Linear(in_features=features, out_features=hl1_dim),
-            nn.ReLU(),
-            nn.Linear(in_features=hl1_dim, out_features=1)
-        )
+        self.network = nn.ModuleList()
+        zipped = zip(layer_widths[:-1], layer_widths[1:])
+        if len(layer_widths) < 4:
+            *hidden, last = zipped
+            for n_in, n_out in hidden:
+                self.network.append(nn.Linear(n_in, n_out))
+                self.network.append(nn.Sigmoid())
+            self.network.append(nn.Linear(last[0], last[1]))
+        else:
+            *hidden, second_last, last = zipped
+            for n_in, n_out in hidden:
+                self.network.append(nn.Linear(n_in, n_out))
+                self.network.append(nn.ReLU())
+            self.network.append(nn.Linear(second_last[0], second_last[1]))
+            self.network.append(nn.Sigmoid())
+            self.network.append(nn.Linear(last[0], last[1]))           
+        self.network = nn.Sequential(*self.network)
 
     def forward(self, x):
-        return self.linear_relu_stack(x)
+        return self.network(x)
 
 
 # Test
-model = NeuralNetwork(xcols=xcols).to(device)
+layer_widths=[6,5,3,1]
+layer_widths = [len(xcols)] + layer_widths
+model = NeuralNetwork(layer_widths).to(device)
 print(model)
 
 # Hyperparameters
@@ -269,7 +275,7 @@ def train_test_loop(train_loader, test_loader, model, loss_fn, optimizer, epochs
 
 
 # Train / test parameters
-train_months = 30
+train_months = 12
 test_months = 6
 months = np.sort(np.unique(dataset.d))
 n_months = len(np.unique(dataset.d))
@@ -303,8 +309,11 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
     print("Train -----------", start_idx, "-", str(months[start_idx])[:10], ":", i + train_months,"-", str(months[i + train_months-1])[:10])
     train = list(range(start_idx, i + train_months))
     
+    # Training - K fold cross validation
+    # This currently returns a list ("best_model_list") of the best parameters ("best_model_state") for each fold
+    # Amend so that the for loop below is nested in an outer loop providing the call to the train_test_loop function 
+    # with multiple hyper-parameters.  Return the best hyper-parameters based on lowest test error.
     best_model_list = []
-    # K fold cross validation
     for fold, (train_sub, validate) in enumerate(kf.split(np.array(train))): 
         print("CV Fold:", fold + 1, "%s %s" % (train_sub, validate))
         
@@ -329,8 +338,7 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
         best_model_list.append(best_model_state)
 
     
-    ##### TEST MODEL HERE #####
-
+    # Testing
     print("Test ------------", i + train_months, "-", str(months[i + train_months])[:10], ":", end_idx,"-", str(months[end_idx-1])[:10])
     test = list(range(i + train_months, end_idx))
     print("\n")
@@ -364,7 +372,7 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
             y_true.append(y.item())
 
     # Write to data frame and insert into list
-    oos_pred_temp_df = df[df['date_stamp'].isin(months[test])][['date_stamp', 'symbol', 'fwd_rtn_1m']] \
+    oos_pred_temp_df = df[df['date_stamp'].isin(months[test])][['date_stamp', 'symbol', 'fwd_rtn']] \
         .reset_index(drop=True).copy()
     oos_pred_temp_df['y_true'] = y_true
     oos_pred_temp_df['y_hat'] = y_hat

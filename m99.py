@@ -21,11 +21,19 @@ print("Components d\n",np.round(d_scores, 3),"\n")
 
 print(np.sqrt(((e_scores - d_scores) ** 2).mean())) 
 
-
-layer_widths = [10,8,6,4,2]
+#layer_widths = [9,7]#,5,3,1]
+#layer_widths = [9,7,5]#,3,1]
+#layer_widths = [9,7,5,3]#,1]
+layer_widths = [9,7,5,3,1]
 encz = zip(layer_widths[:-1], layer_widths[1:])
-*hidden, second_last, last = encz
-for n_in, n_out in hidden:
-    print(n_in, " - ", n_out)
-print(second_last[0], " - ", second_last[1], "  second_last")
-print(last[0], " - ", last[1], "  last")
+if len(layer_widths) < 4:
+    *hidden, last = encz
+    for n_in, n_out in hidden:
+        print(n_in, " - ", n_out, " Linear & Sigmoid")
+    print(last[0], " - ", last[1], " Linear")
+else:
+    *hidden, second_last, last = encz
+    for n_in, n_out in hidden:
+        print(n_in, " - ", n_out, " Linear & Relu")
+    print(second_last[0], " - ", second_last[1], " Linear & Sigmoid")
+    print(last[0], " - ", last[1], " Linear")
