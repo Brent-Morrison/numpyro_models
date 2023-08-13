@@ -2,7 +2,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pandas.api.types import is_datetime64_any_dtype
+#from pandas.api.types import is_datetime64_any_dtype
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Dataset, Subset, SubsetRandomSampler
 torch.set_printoptions(linewidth=120)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using {device} device")
+print(f"Using {device} device\n")
 
 # Prepare data
 file_path="/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv"
@@ -115,11 +115,11 @@ class NeuralNetwork(nn.Module):
 layer_widths=[6,5,3,1]
 layer_widths = [len(xcols)] + layer_widths
 model = NeuralNetwork(layer_widths).to(device)
-print(model)
+print(model,"\n")
 
 # Hyperparameters
 learning_rate = 1e-2
-batch_size = 50
+batch_size = 10
 
 # Initialize the loss function
 loss_fn = nn.MSELoss()
@@ -172,7 +172,8 @@ def test_loop(dataloader, model, loss_fn, verbose=False):
     test_loss /= num_batches # same as 'tl = tl / nb'
 
     if verbose == True:
-        print(f"\nTest error: {test_loss:>7f} [{len(X):>5d}] \n")
+        #print(f"Test error: {test_loss:>7f} [{len(X):>5d}]")
+        print(f"Error: {test_loss:>4f}")
     
     return test_loss  
 
@@ -194,12 +195,12 @@ class earlyStopping():
         if vldtn_error < self.min_vldtn_error:
             self.min_vldtn_error = vldtn_error
             self.counter = 0
-            self.status = f"Improved validation loss\n"
+            self.status = f"Improved validation loss"
         elif vldtn_error > (self.min_vldtn_error + self.min_delta):
             self.counter += 1
-            self.status = f"{self.counter} epochs without improved validation loss\n"
+            self.status = f"{self.counter} epochs without improved validation loss"
             if self.counter >= self.patience:
-                self.status = f"{self.counter} epochs without improvement, patience exceeded\n"
+                self.status = f"{self.counter} epochs without improvement, patience exceeded"
                 self.early_stop = True
 
     def reset(self):
@@ -250,11 +251,10 @@ def train_test_loop(train_loader, test_loader, model, loss_fn, optimizer, epochs
     es = early_stop
     
     for e in range(epochs):
-        print(f"Epoch {e+1} ---------------------------------------------\n")
         train_error.append(train_loop(train_loader, model, loss_fn, optimizer, verbose))
         test_error.append(test_loop(test_loader, model, loss_fn, verbose))
         es(test_error[e])
-        print(f"Error: {test_error[e]:>5f} |", es.status)
+        print(f"Epoch {e+1:3} | Error: {test_error[e]:>4f} | {es.status:43}")
         if e+1 == epochs:
             # Save model on completion of epochs and reset early stop
             best_model_state = deepcopy(model.state_dict())
@@ -302,11 +302,6 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
     start_idx = i
     end_idx = i + sample_months
     window = list(range(start_idx, end_idx))
-    
-    print("Sliding window --", start_idx, "-", str(months[start_idx])[:10], ":", end_idx,"-", str(months[end_idx-1])[:10])
-
-    # Train / test split
-    print("Train -----------", start_idx, "-", str(months[start_idx])[:10], ":", i + train_months,"-", str(months[i + train_months-1])[:10])
     train = list(range(start_idx, i + train_months))
     
     # Training - K fold cross validation
@@ -315,7 +310,8 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
     # with multiple hyper-parameters.  Return the best hyper-parameters based on lowest test error.
     best_model_list = []
     for fold, (train_sub, validate) in enumerate(kf.split(np.array(train))): 
-        print("CV Fold:", fold + 1, "%s %s" % (train_sub, validate))
+        print(f"Window {window_num+1:2} | Train {str(months[start_idx])[:10]} to {str(months[i + train_months-1])[:10]} | CV Fold {fold + 1}")
+        print("------------------------------------------------------")
         
         # Propagate months to individual records - training
         train_dict = {k: v for (k, v) in idx_date_dict.items() if v in list(months[train_sub])}
@@ -339,14 +335,14 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
 
     
     # Testing
-    print("Test ------------", i + train_months, "-", str(months[i + train_months])[:10], ":", end_idx,"-", str(months[end_idx-1])[:10])
+    print(f"Window {window_num+1:2} | Test  {str(months[i + train_months])[:10]} to {str(months[end_idx-1])[:10]}")
+    print("------------------------------------------")
     test = list(range(i + train_months, end_idx))
-    print("\n")
     
     # Create average of CV folds
     wndw_mdl_state = best_model_list[0]
     for key in best_model_list[0]:
-        # this needs to be dynamic for differing kfolds
+        # TO DO - this needs to be dynamic for differing kfolds
         wndw_mdl_state[key] = (best_model_list[0][key] + best_model_list[1][key] + best_model_list[2][key]) / len(best_model_list)
     
     # Track model states
@@ -370,6 +366,10 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
         for X, y in test_loader:
             y_hat.append(model(X).item())
             y_true.append(y.item())
+    
+    # Error on test data
+    test_loop(test_loader, model, loss_fn, verbose=True)
+    print("\n")
 
     # Write to data frame and insert into list
     oos_pred_temp_df = df[df['date_stamp'].isin(months[test])][['date_stamp', 'symbol', 'fwd_rtn']] \
@@ -387,113 +387,3 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
     
 # Compute performance metrics
 oos_pred_df = pd.concat(oos_pred_list)
-
-
-
-
-
-
-
-
-# Visualising train and validation error
-error_df = pd.DataFrame({
-    'Epoch' : list(range(1, len(train_error)+1)), 
-    'Train' : train_error, 
-    'Test': test_error})
-
-# Plot 1
-sns.set_style('darkgrid')
-sns.lineplot(
-    data=error_df.melt(id_vars=['Epoch'], value_vars=['Train', 'Test'], 
-                        value_name='Error', var_name='Dataset'),
-    x='Epoch',
-    y='Error',
-    hue='Dataset',
-    palette=sns.color_palette("mako_r", 2)
-    )
-
-# Plot 2 #
-sns.set_style('darkgrid')
-g = sns.lineplot(data=error_df, x='Epoch', y='Train', label='Train')
-sns.set_style('darkgrid', {'axes.grid': False})
-sns.lineplot(data=error_df, x='Epoch', y='Test', label='Test', color='red', markers=False, ax=g.twinx()) \
-    .set(title='Training and validation errror')
-
-
-# Linear exponential loss
-def linex(y, yhat, alpha = 0.5):
-    error = y - yhat
-    return torch.exp(alpha * torch.sign(y) * error) - (alpha * torch.sign(y)) * error - 1
-
-# Test
-#y = torch.Tensor([[0.5]]).repeat(7,1)
-y1 = torch.Tensor([[-1.5],[-1],[-0.5],[0],[0.5],[1],[1.5]])
-yhat1 = torch.Tensor([[-1.5],[-1],[-0.5],[0],[0.5],[1],[1.5]])
-
-y1 = torch.Tensor([-1.5,-1,-0.5,0,0.5,1,1.5])
-yhat1 = torch.Tensor([-1.5,-1,-0.5,0,0.5,1,1.5])
-
-y, yhat = torch.meshgrid(y1, yhat1)
-error = linex(y, yhat)
-
-fig = plt.figure()
-ax = plt.axes(projection='3d')
-
-
-##############################
-
-def linex(y, yhat, alpha = 0.5):
-    error = y - yhat
-    return np.exp(alpha * np.sign(y) * error) - (alpha * np.sign(y)) * error - 1
-
-ys = torch.linspace(-1.5, 1.5, 30) #Tensor([-1.5,-1,-0.5,0,0.5,1,1.5])
-yhats = torch.linspace(-1.5, 1.5, 30) #Tensor([-1.5,-1,-0.5,0,0.5,1,1.5])
-y, yhat = torch.meshgrid(ys, yhats) #, indexing='xy')
-z = linex(y, yhat)
-#z = (yhat-y)**2
-ax = plt.axes(projection='3d')
-ax.plot_surface(y.numpy(), yhat.numpy(), z.numpy(), rstride=1, cstride=1, cmap='viridis', edgecolor='none')
-ax.set_xlabel('y')
-ax.set_ylabel('yhat')
-ax.set_zlabel('loss')
-#ax.view_init(elev=30, azim=-60) # default, elev: angle above/below x-y, azim: rotate about the z axis
-ax.view_init(10, -15)
-plt.show()
-
-
-
-
-
-sys.path.insert(1, '/c/Users/brent/Documents/VS_Code/postgres/postgres/python')  # to be replaced once package set up
-import pg_connect as pgc
-import json
-
-# Load config file
-with open('/c/Users/brent/Documents/VS_Code/postgres/postgres/config.json', 'r') as f:
-    config = json.load(f)
-
-# Connect to db
-conn = pgc.pg_connect(pg_password=config['pg_password'], database='stock_master')
-
-
-
-
-
-
-# Sliding window
-for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_months)):
-    start_idx = i
-    end_idx = i + sample_months
-    window = list(range(start_idx, end_idx))
-    print(window_num)
-    print("Sliding window --", start_idx, "-", str(months[start_idx])[:10], ":", end_idx,"-", str(months[end_idx-1])[:10])
-
-    # Train / test split
-    print("Train -----------", start_idx, "-", str(months[start_idx])[:10], ":", i + train_months,"-", str(months[i + train_months-1])[:10])
-    train = list(range(start_idx, i + train_months))
-    
-    ##### TEST MODEL HERE #####
-
-    print("Test ------------", i + train_months, "-", str(months[i + train_months])[:10], ":", end_idx,"-", str(months[end_idx-1])[:10])
-    test = list(range(i + train_months, end_idx))
-    print("\n")
