@@ -159,7 +159,6 @@ def main(args):
     X_std = torch.std(X, dim=0)
     X_norm = (X - X_mean) / X_std
 
-    #encoded, decoded = train_loop(data=X_norm, layer_width=args.layer_width, epochs=args.epochs, learn_rate=args.learn_rate)
     enc_norm, dec_norm = train_loop(data=X_norm, layer_width=args.layer_width, epochs=args.epochs, learn_rate=args.learn_rate)
     encoded = enc_norm #(enc_norm * X_std) + X_mean
     decoded = (dec_norm * X_std) + X_mean

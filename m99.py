@@ -121,7 +121,17 @@ plt.show()
 
 
 
+##############################
 
+import json
+
+with open("/c/Users/brent/Documents/R/Misc_scripts/e01/01-scripts_02-args.json", "r") as read_file:
+    args = json.load(read_file)
+
+l = args['predictors']
+
+
+##############################
 
 sys.path.insert(1, '/c/Users/brent/Documents/VS_Code/postgres/postgres/python')  # to be replaced once package set up
 import pg_connect as pgc
