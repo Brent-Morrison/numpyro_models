@@ -1,3 +1,4 @@
+"""
 # Testing dummy data for autoencoder
 import numpy as np
 from sklearn.decomposition import PCA
@@ -129,10 +130,53 @@ with open("/c/Users/brent/Documents/R/Misc_scripts/e01/01-scripts_02-args.json",
     args = json.load(read_file)
 
 l = args['predictors']
+"""
+
+# https://gist.github.com/matthewfeickert/3b7d30e408fe4002aac728fc911ced35
+import argparse
+import json
+
+def main(args):
+    for i in range(2):
+        print(args.loss[i], " | ", args.layer_width[i], " | ", args.xcols)
+
+
+if __name__ == '__main__':
+    cli_parser = argparse.ArgumentParser(
+        description='configuration arguments provided at run time from the CLI'
+    )
+    cli_parser.add_argument(
+        '-c',
+        '--config_file',
+        dest='config_file',
+        type=str,
+        default=None,
+        help='config file',
+    )
+
+    args, unknown = cli_parser.parse_known_args()
+
+    parser = argparse.ArgumentParser(parents=[cli_parser], add_help=False)
+
+    if args.config_file is not None:
+        if '.json' in args.config_file:
+            config = json.load(open(args.config_file))
+            parser.set_defaults(**config)
+
+            [
+                parser.add_argument(arg)
+                for arg in [arg for arg in unknown if arg.startswith('--')]
+                if arg.split('--')[-1] in config
+            ]
+
+    args = parser.parse_args()
+
+    main(args)
+
 
 
 ##############################
-
+"""
 sys.path.insert(1, '/c/Users/brent/Documents/VS_Code/postgres/postgres/python')  # to be replaced once package set up
 import pg_connect as pgc
 import json
@@ -166,3 +210,42 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
     print("Test ------------", i + train_months, "-", str(months[i + train_months])[:10], ":", end_idx,"-", str(months[end_idx-1])[:10])
     test = list(range(i + train_months, end_idx))
     print("\n")
+"""
+
+# Also - https://stackoverflow.com/questions/29027792/get-average-value-from-list-of-dictionary
+import pickle
+from collections import OrderedDict
+with open("m03_best_model_list", "rb") as f:   # Unpickling
+    best_model_list = pickle.load(f)
+
+wndw_mdl_state = best_model_list[0]
+
+for key in best_model_list[0]:
+    # TO DO - this needs to be dynamic for differing kfolds
+    wndw_mdl_state[key] = (best_model_list[0][key] + best_model_list[1][key] + best_model_list[2][key]) / len(best_model_list)
+wndw_mdl_state
+
+
+
+with open("m03_best_model_list", "rb") as f:   # Unpickling
+    best_model_list = pickle.load(f)
+
+wndw_mdl_state = best_model_list[0]
+wndw_mdl_state = dict.fromkeys(wndw_mdl_state, 0) # Copy structure setting values to nil
+wndw_mdl_state = OrderedDict((k, 0) for k in wndw_mdl_state)
+
+#for m in range(len(best_model_list)):
+for key in wndw_mdl_state:
+    for m in range(len(best_model_list)):
+        wndw_mdl_state[key] += best_model_list[m][key]
+    wndw_mdl_state[key] /= len(best_model_list)
+wndw_mdl_state
+
+
+
+l = [1,2,3,4,5]
+p = 0.
+for i in l:
+    p += i
+p /= len(l)
+print(p)

@@ -1,5 +1,6 @@
 import argparse
 from copy import deepcopy
+from collections import OrderedDict
 import numpy as np
 import pandas as pd
 import torch
@@ -365,6 +366,10 @@ def main(args):
                 )
             best_model_list.append(best_model_state)
 
+        import pickle #------------------------------------------------------------------------------------------------------------------------------------------------
+        with open("m03_best_model_list", "wb") as f:   #Pickling
+            pickle.dump(best_model_list, f)
+        
         
         # Testing
         print(f"Window {window_num+1:2} | Test  {str(months[i + train_months])[:10]} to {str(months[end_idx-1])[:10]}")
@@ -373,9 +378,14 @@ def main(args):
         
         # Create average of model parameters using each CV fold
         wndw_mdl_state = best_model_list[0]
-        for key in best_model_list[0]:
-            # TO DO - this needs to be dynamic for differing kfolds
-            wndw_mdl_state[key] = (best_model_list[0][key] + best_model_list[1][key] + best_model_list[2][key]) / len(best_model_list)
+        #wndw_mdl_state = dict.fromkeys(wndw_mdl_state, 0) # Copy structure setting values to nil
+        wndw_mdl_state = OrderedDict((k, 0) for k in wndw_mdl_state) # Copy structure setting values to nil, "dict.fromkeys(wndw_mdl_state, 0)" coverts to regular dict
+
+        for key in wndw_mdl_state:
+            for m in range(len(best_model_list)):
+                wndw_mdl_state[key] += best_model_list[m][key]
+            wndw_mdl_state[key] /= len(best_model_list)
+        
         
         # Track model states
         wndw_mdl_states.append(wndw_mdl_state)
