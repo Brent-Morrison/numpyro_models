@@ -11,7 +11,7 @@ from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, Dataset, Subset, SubsetRandomSampler
 
 
-# Convenience for argparse -------------------------------------------------------------------------------------------------
+# Convenience for functions ------------------------------------------------------------------------------------------------
 
 # https://www.geeksforgeeks.org/how-to-pass-a-list-as-a-command-line-argument-with-argparse/
 def list_of_strings(strings):
@@ -19,7 +19,22 @@ def list_of_strings(strings):
 
 def list_of_ints(ints):
     return list(map(int, ints.split(',')))
+    
+def expand_grid0(*args):
+    if len(args) == 2:
+        grid = [[x, y] for x in args[0] for y in args[1]]
+    elif len(args) == 3:
+        grid = [[x, y, z] for x in args[0] for y in args[1] for z in args[2]]
+    return grid
 
+def expand_grid(layer_width=[[5,1]], epochs=[20], es_patience=[10], learning_rate=[1e-2,1e-3], loss_fn=["linex"]):
+    grid = [[x, y, z, a, b] \
+        for x in layer_width   \
+        for y in epochs        \
+        for z in es_patience   \
+        for a in learning_rate \
+        for b in loss_fn       ]
+    return grid
 
 
 
@@ -106,10 +121,6 @@ class DFLoader(Dataset):
 # --------------------------------------------------------------------------------------------------------------------------
 # 
 # Neural network
-#
-# TO DO : Custom loss function
-# https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3973086
-# https://www.sciencedirect.com/science/article/abs/pii/S0304407606001606?via%3Dihub
 # 
 # --------------------------------------------------------------------------------------------------------------------------
 
@@ -143,6 +154,10 @@ class NeuralNetwork(nn.Module):
 
 # Define train loop
 def train_loop(dataloader, model, loss_fn, optimizer, verbose=False):
+    """Completes one epoch looping over all batches
+    
+    Returns average error over epoch
+    """
     size = len(dataloader.sampler)
     running_loss = 0.0
     
@@ -172,6 +187,10 @@ def train_loop(dataloader, model, loss_fn, optimizer, verbose=False):
 
 # Define validation / test loop
 def test_loop(dataloader, model, loss_fn, verbose=False):
+    """Completes one model looping over all batches (batches typically set to one for test)
+    
+    Returns average error
+    """
     num_batches = len(dataloader)
     test_loss = 0
 
@@ -192,6 +211,10 @@ def test_loop(dataloader, model, loss_fn, verbose=False):
 
 # Early stopping
 class earlyStopping():
+    """TO DO
+    
+    xxxxxx
+    """
     def __init__(self, patience=5, min_delta=0):
 
         self.patience = patience
@@ -225,6 +248,16 @@ class earlyStopping():
 
 # Train / test loop
 def train_test_loop(train_loader, test_loader, model, loss_fn, optimizer, epochs, early_stop, weights=None, verbose=False):
+    
+    """Completes one model assessment over all samples
+    
+    Returns:
+        train_error (list)      : each epochs training error
+        test_error (list)       : each epochs test error 
+        best_model_state (dict) : state_dict as at last epoch
+        start_state (dict)      : the state_dict loaded or initialised 
+    """
+    
     train_error = []
     test_error = []
     best_model_state = []
@@ -287,28 +320,6 @@ def main(args):
     date = 'date_stamp'
     dataset = DFLoader(df, date, ycols, xcols)
 
-    # Model
-    layer_widths = args.layer_width
-    layer_widths = [len(xcols)] + layer_widths
-    model = NeuralNetwork(layer_widths).to(device)
-    epochs = args.epochs
-    print(model,"\n")
-
-    # Hyperparameters
-    learning_rate = 1e-2
-    batch_size = 10
-
-    # Initialize the loss function
-    if args.loss == 'mse':
-        loss_fn = nn.MSELoss()
-    elif args.loss == 'mae':
-        loss_fn = nn.L1Loss()
-    elif args.loss == 'linex':
-        loss_fn = LinexLoss()
-
-    # Optimiser
-    optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-
     # Train / test parameters
     train_months = 12
     test_months = 6
@@ -317,7 +328,6 @@ def main(args):
     sample_months = train_months + test_months 
     loops = int(np.floor((n_months - train_months) / test_months)) 
     start_month_idx = int(n_months - (test_months * loops) - train_months)
-    es = earlyStopping(patience=15)
 
     # K-fold 
     kf = KFold(n_splits=3, shuffle=True, random_state=42)
@@ -325,74 +335,110 @@ def main(args):
     # Date index to record index
     idx_date_dict = {k: v for k, v in enumerate(list(dataset.d.reshape(-1)))}
     oos_pred_list = []
-    wndw_mdl_states = []
-    wndw_mdl_state = None
+    best_model_window = None
+    best_model_param = []
     start_states = []
     start_state = None
 
-    # Sliding window
+    # Sliding window (start) --------------------------------------------------------------------------------------------(3)
     for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_months)):
+        
         start_idx = i
         end_idx = i + sample_months
         window = list(range(start_idx, end_idx))
         train = list(range(start_idx, i + train_months))
+        vldtn_error_param = []
         
-        # Training - K fold cross validation
-        # This currently returns a list ("best_model_list") of the best parameters ("best_model_state") for each fold
-        # Amend so that the for loop below is nested in an outer loop providing the call to the train_test_loop function 
-        # with multiple hyper-parameters.  Return the best hyper-parameters based on lowest test error.
-        best_model_list = []
-        for fold, (train_sub, validate) in enumerate(kf.split(np.array(train))): 
-            print(f"Window {window_num+1:2} | Train {str(months[start_idx])[:10]} to {str(months[i + train_months-1])[:10]} | CV Fold {fold + 1}")
-            print("------------------------------------------------------")
-            
-            # Propagate months to individual records - training
-            train_dict = {k: v for (k, v) in idx_date_dict.items() if v in list(months[train_sub])}
-            train_idx = list(train_dict.keys())
-            train_sampler = SubsetRandomSampler(train_idx)
-            train_loader = DataLoader(dataset, sampler=train_sampler, batch_size=batch_size)
-            
-            # Propagate months to individual records - validation
-            vldtn_dict = {k: v for (k, v) in idx_date_dict.items() if v in list(months[validate])}
-            vldtn_idx = list(vldtn_dict.keys())
-            vldtn_sampler = SubsetRandomSampler(vldtn_idx)
-            vldtn_loader = DataLoader(dataset, sampler=vldtn_sampler, batch_size=len(vldtn_idx)) # 1 batch for validation
-
-            # Train & validate
-            train_error, test_error, best_model_state, start_state = train_test_loop(
-                train_loader, vldtn_loader, model, loss_fn, optimizer, epochs, 
-                early_stop=es, 
-                weights=None if window_num == 0 else wndw_mdl_state
-                )
-            best_model_list.append(best_model_state)
-
-        import pickle #------------------------------------------------------------------------------------------------------------------------------------------------
-        with open("m03_best_model_list", "wb") as f:   #Pickling
-            pickle.dump(best_model_list, f)
+        grid = expand_grid(layer_width=[[5,1], [5,3,1]])
         
+        # Loop over hyper parameters (start) ----------------------------------------------------------------------------(2)
+        for p in range(len(grid)):
+            print("**** Hyper-parameters **** :", grid[p],"\n")
+
+            # Model
+            layer_widths = grid[p][0]  #[5,1]  #args.layer_width
+            layer_widths = [len(xcols)] + layer_widths
+            model = NeuralNetwork(layer_widths).to(device)
+            epochs = grid[p][1] #5 #args.epochs
+            print(model,"\n")
+            
+            learning_rate = grid[p][3]  #1e-2
+            batch_size = 10
+            
+            # Initialize the loss function & optimiser
+            if grid[p][4] == 'mse':
+                loss_fn = nn.MSELoss()
+            elif grid[p][4] == 'mae':
+                loss_fn = nn.L1Loss()
+            elif grid[p][4] == 'linex':
+                loss_fn = LinexLoss()
+            optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+            es = earlyStopping(patience=grid[p][2])
+            
+            best_model_fold = []
+            vldtn_error_fold = []
+            
+            # Training - K fold cross validation (start) --------------------------------------------------------------- (1)
+            for fold, (train_sub, validate) in enumerate(kf.split(np.array(train))): 
+                print(f"Window {window_num+1:2} | Train {str(months[start_idx])[:10]} to {str(months[i + train_months-1])[:10]} | CV Fold {fold + 1}")
+                print("------------------------------------------------------")
+                
+                # Propagate months to individual records - training
+                train_dict = {k: v for (k, v) in idx_date_dict.items() if v in list(months[train_sub])}
+                train_idx = list(train_dict.keys())
+                train_sampler = SubsetRandomSampler(train_idx)
+                train_loader = DataLoader(dataset, sampler=train_sampler, batch_size=batch_size)
+                
+                # Propagate months to individual records - validation
+                vldtn_dict = {k: v for (k, v) in idx_date_dict.items() if v in list(months[validate])}
+                vldtn_idx = list(vldtn_dict.keys())
+                vldtn_sampler = SubsetRandomSampler(vldtn_idx)
+                vldtn_loader = DataLoader(dataset, sampler=vldtn_sampler, batch_size=len(vldtn_idx)) # 1 batch for validation
+
+                # Train & validate
+                train_error, vldtn_error, best_model_state, start_state = train_test_loop(
+                    train_loader, vldtn_loader, model, loss_fn, optimizer, epochs, 
+                    early_stop=es, 
+                    weights=None if window_num == 0 or p == 0 else best_model_window
+                    )
+                
+                vldtn_error_fold.append(vldtn_error[-1:][0])  # list of val error for each fold
+                best_model_fold.append(best_model_state)      # list of model for each fold
+            
+            # Training - K fold cross validation (end) ------------------------------------------------------------------(1)
+            
+            
+            # Average error per parameter setting (over all CV folds)
+            vldtn_error_param_ = np.mean(np.array(vldtn_error_fold))
+            vldtn_error_param.append(vldtn_error_param_)
+            print("Validation error", np.round(vldtn_error_param_, 6),"\n")
+            
+            # Average of model state per parameter setting (over all CV folds)
+            best_model_param_ = best_model_fold[0]
+            best_model_param_ = OrderedDict((k, 0) for k in best_model_param_) # Copy structure setting values to nil, "dict.fromkeys(best_model_param_, 0)" coverts to regular dict
+            for key in best_model_param_:
+                for m in range(len(best_model_fold)):
+                    best_model_param_[key] += best_model_fold[m][key]
+                best_model_param_[key] /= len(best_model_fold)
+            best_model_param.append(best_model_param_)
+        
+        # Loop over hyper parameters (end) ------------------------------------------------------------------------------(2)
+
+
+        best_hyper_param_idx = vldtn_error_param.index(min(vldtn_error_param))
+        print("Best hypers", grid[best_hyper_param_idx],"\n")
         
         # Testing
         print(f"Window {window_num+1:2} | Test  {str(months[i + train_months])[:10]} to {str(months[end_idx-1])[:10]}")
         print("------------------------------------------")
         test = list(range(i + train_months, end_idx))
         
-        # Create average of model parameters using each CV fold
-        wndw_mdl_state = best_model_list[0]
-        #wndw_mdl_state = dict.fromkeys(wndw_mdl_state, 0) # Copy structure setting values to nil
-        wndw_mdl_state = OrderedDict((k, 0) for k in wndw_mdl_state) # Copy structure setting values to nil, "dict.fromkeys(wndw_mdl_state, 0)" coverts to regular dict
-
-        for key in wndw_mdl_state:
-            for m in range(len(best_model_list)):
-                wndw_mdl_state[key] += best_model_list[m][key]
-            wndw_mdl_state[key] /= len(best_model_list)
-        
-        
         # Track model states
-        wndw_mdl_states.append(wndw_mdl_state)
+        best_model_window = best_model_param[best_hyper_param_idx]
         start_states.append(start_state)
 
         # Load state dict
-        model.load_state_dict(wndw_mdl_state)
+        model.load_state_dict(best_model_window)
         model.eval()
 
         # Propagate months to individual records - test
@@ -421,11 +467,13 @@ def main(args):
         
         oos_pred_list.append(oos_pred_temp_df)
         
-        
+    # Sliding window (end) ----------------------------------------------------------------------------------------------(3)
+    
+    
     # Aggregate performance metrics & save
     oos_pred_df = pd.concat(oos_pred_list)
     oos_pred_df.to_csv('/c/Users/brent/Documents/R/Misc_scripts/m03_preds.csv')
- 
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="m03")

@@ -80,7 +80,7 @@ def sample(model, args, rng_key, X, Y):
     mcmc.print_summary()
     post_samples = mcmc.get_samples() 
 
-    with open("m01_post_samples.pickle", "wb") as handle:
+    with open("m04_post_samples.pickle", "wb") as handle:
         pickle.dump(post_samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("\nMCMC elapsed time:", time.time() - start)
@@ -91,10 +91,10 @@ def sample(model, args, rng_key, X, Y):
 
 def predict(data, rng_key):
     
-    with open("m01_post_samples.pickle", "rb") as handle:
-        m01_post_samples = pickle.load(handle)
+    with open("m04_post_samples.pickle", "rb") as handle:
+        m04_post_samples = pickle.load(handle)
     
-    predictive = Predictive(model, posterior_samples=m01_post_samples)
+    predictive = Predictive(model, posterior_samples=m04_post_samples)
 
     preds = predictive(rng_key, Y=data)["Y"]
     means = np.mean(preds, axis=0)
