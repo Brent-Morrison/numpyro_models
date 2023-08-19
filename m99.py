@@ -584,3 +584,38 @@ for window_num, i in enumerate(range(start_month_idx, loops*test_months, test_mo
 # Aggregate performance metrics & save
 oos_pred_df = pd.concat(oos_pred_list)
 oos_pred_df.to_csv('/c/Users/brent/Documents/R/Misc_scripts/m03_preds.csv')
+
+
+
+
+
+def expand_grid(layer_width=[[5,1]], epochs=[20], es_patience=[10], learning_rate=[1e-2,1e-3], loss_fn=["linex"]):
+    grid = [[x, y, z, a, b] \
+        for x in layer_width   \
+        for y in epochs        \
+        for z in es_patience   \
+        for a in learning_rate \
+        for b in loss_fn       ]
+    return grid
+
+grid = expand_grid(layer_width=[[5,1], [5,3,1]], epochs=[12])
+
+rj=25
+print("------------------------------------------------------")
+print(f"Hyper-parameter set {p} of {len(grid)}")
+print("-Epochs:".ljust(rj),str(grid[p][1]).rjust(rj))
+print("-Early stop patience:".ljust(rj),str(grid[p][2]).rjust(rj))
+print("-Learning rate:".ljust(rj),str(grid[p][3]).rjust(rj))
+print("-Loss function:".ljust(rj),str(grid[p][4]).rjust(rj))
+print("------------------------------------------------------")
+
+
+
+
+for p in range(len(grid)):
+    print("------------------------------------------------------")
+    print(f"Hyper-parameter set {p} of {len(grid)} \
+          \n-Epochs:.ljust(30){grid[p][1]:>30} \
+          \n-Early stop patience:{grid[p][2]:>30} \
+          \n-Learning rate:{grid[p][3]:>30} \
+          \n-Loss function:{grid[p][4]:>30}")

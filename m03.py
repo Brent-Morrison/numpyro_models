@@ -11,7 +11,7 @@ from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, Dataset, Subset, SubsetRandomSampler
 
 
-# Convenience for functions ------------------------------------------------------------------------------------------------
+# Convenience functions ----------------------------------------------------------------------------------------------------
 
 # https://www.geeksforgeeks.org/how-to-pass-a-list-as-a-command-line-argument-with-argparse/
 def list_of_strings(strings):
@@ -311,7 +311,7 @@ def main(args):
     
     torch.set_printoptions(linewidth=120)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using {device} device\n")
+    print(f"\nUsing {device} device\n")
     
     # Data
     ycols = ['fwd_rtn']
@@ -349,11 +349,19 @@ def main(args):
         train = list(range(start_idx, i + train_months))
         vldtn_error_param = []
         
-        grid = expand_grid(layer_width=[[5,1], [5,3,1]])
+        grid = expand_grid(layer_width=[[5,1], [5,3,1]], epochs=[12], loss_fn=["linex"])
         
         # Loop over hyper parameters (start) ----------------------------------------------------------------------------(2)
         for p in range(len(grid)):
-            print("**** Hyper-parameters **** :", grid[p],"\n")
+            print("------------------------------------------------------")
+            print(f"Window {window_num+1:2}\n")
+            print(f"Hyper-parameter set {p} of {len(grid)}")
+            rj=25
+            print("-Epochs:".ljust(rj),str(grid[p][1]).rjust(rj))
+            print("-Early stop patience:".ljust(rj),str(grid[p][2]).rjust(rj))
+            print("-Learning rate:".ljust(rj),str(grid[p][3]).rjust(rj))
+            print("-Loss function:".ljust(rj),str(grid[p][4]).rjust(rj),"\n")
+            
 
             # Model
             layer_widths = grid[p][0]  #[5,1]  #args.layer_width
@@ -361,6 +369,7 @@ def main(args):
             model = NeuralNetwork(layer_widths).to(device)
             epochs = grid[p][1] #5 #args.epochs
             print(model,"\n")
+            print("------------------------------------------------------\n")
             
             learning_rate = grid[p][3]  #1e-2
             batch_size = 10
@@ -399,7 +408,7 @@ def main(args):
                 train_error, vldtn_error, best_model_state, start_state = train_test_loop(
                     train_loader, vldtn_loader, model, loss_fn, optimizer, epochs, 
                     early_stop=es, 
-                    weights=None if window_num == 0 or p == 0 else best_model_window
+                    weights=None #if (window_num == 0 or p == 0 or fold == 0) else best_model_window
                     )
                 
                 vldtn_error_fold.append(vldtn_error[-1:][0])  # list of val error for each fold
