@@ -54,7 +54,7 @@ def model(X=None, Y=None):
 
     # Mean
     if X is not None:
-        mu = jnp.matmul(X,bX)
+        mu = jnp.matmul(X, bX)
     else:
         mu = 0.0
 
@@ -80,7 +80,7 @@ def sample(model, args, rng_key, X, Y):
     mcmc.print_summary()
     post_samples = mcmc.get_samples() 
 
-    with open("m04_post_samples.pickle", "wb") as handle:
+    with open("m01_post_samples.pickle", "wb") as handle:
         pickle.dump(post_samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("\nMCMC elapsed time:", time.time() - start)
@@ -91,10 +91,10 @@ def sample(model, args, rng_key, X, Y):
 
 def predict(data, rng_key):
     
-    with open("m04_post_samples.pickle", "rb") as handle:
-        m04_post_samples = pickle.load(handle)
+    with open("m01_post_samples.pickle", "rb") as handle:
+        m01_post_samples = pickle.load(handle)
     
-    predictive = Predictive(model, posterior_samples=m04_post_samples)
+    predictive = Predictive(model, posterior_samples=m01_post_samples)
 
     preds = predictive(rng_key, Y=data)["Y"]
     means = np.mean(preds, axis=0)
@@ -119,7 +119,7 @@ def main(args):
     sample(model, args, rng_key, X=X, Y=Y)
 
     # do prediction
-    means, quantiles = predict(data=Y, rng_key=rng_key_predict)
+    means, quantiles = predict(data=X, rng_key=rng_key_predict)  # TO DO - this Y should be new data
     pd.DataFrame({'date_stamp': idx, 'Yhat': means, 'lower': quantiles[0, :], 'upper': quantiles[1, :]}) \
         .to_csv('/c/Users/brent/Documents/R/Misc_scripts/m01_preds.csv')
 
@@ -141,5 +141,7 @@ if __name__ == "__main__":
     main(args)
 
 
+# conda activate pytorch_pyro
+# cd ~/numpyro_models/numpyro_models
 # python m01.py -d 2021-12-31 -f /c/Users/brent/Documents/R/Misc_scripts/stocks.csv
 # conda activate pytorch_pyro && python ~/numpyro_models/numpyro_models/m01.py

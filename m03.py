@@ -1,4 +1,5 @@
 import argparse
+import json
 from copy import deepcopy
 from collections import OrderedDict
 import numpy as np
@@ -6,7 +7,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch import Tensor
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, Dataset, Subset, SubsetRandomSampler
 
@@ -315,7 +315,7 @@ def main(args):
     
     # Data
     ycols = ['fwd_rtn']
-    xcols = ['rtn_ari_1m', 'rtn_ari_3m', 'rtn_ari_12m', 'perc_range_12m', 'perc_pos_12m', 'rtn_from_high_12m', 'vol_ari_60d']
+    xcols = args.xcols
     df = get_data(file_path="/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv", date_filter="2016-12-31", xcols=xcols, ycols=ycols)
     date = 'date_stamp'
     dataset = DFLoader(df, date, ycols, xcols)
@@ -336,7 +336,6 @@ def main(args):
     idx_date_dict = {k: v for k, v in enumerate(list(dataset.d.reshape(-1)))}
     oos_pred_list = []
     best_model_window = None
-    best_model_param = []
     start_states = []
     start_state = None
 
@@ -348,14 +347,18 @@ def main(args):
         window = list(range(start_idx, end_idx))
         train = list(range(start_idx, i + train_months))
         vldtn_error_param = []
+        best_model_param = []
         
-        grid = expand_grid(layer_width=[[5,1], [5,3,1]], epochs=[12], loss_fn=["linex"])
+        grid = expand_grid( \
+            layer_width=args.layer_width, epochs=args.epochs, \
+            es_patience=args.es_patience, learning_rate=args.learning_rate, \
+            loss_fn=args.loss_fn)
         
         # Loop over hyper parameters (start) ----------------------------------------------------------------------------(2)
         for p in range(len(grid)):
             print("------------------------------------------------------")
             print(f"Window {window_num+1:2}\n")
-            print(f"Hyper-parameter set {p} of {len(grid)}")
+            print(f"Hyper-parameter set {p+1} of {len(grid)}")
             rj=25
             print("-Epochs:".ljust(rj),str(grid[p][1]).rjust(rj))
             print("-Early stop patience:".ljust(rj),str(grid[p][2]).rjust(rj))
@@ -371,7 +374,6 @@ def main(args):
             print(model,"\n")
             print("------------------------------------------------------\n")
             
-            learning_rate = grid[p][3]  #1e-2
             batch_size = 10
             
             # Initialize the loss function & optimiser
@@ -381,7 +383,7 @@ def main(args):
                 loss_fn = nn.L1Loss()
             elif grid[p][4] == 'linex':
                 loss_fn = LinexLoss()
-            optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+            optimizer = optim.SGD(model.parameters(), lr=grid[p][3])
             es = earlyStopping(patience=grid[p][2])
             
             best_model_fold = []
@@ -408,7 +410,8 @@ def main(args):
                 train_error, vldtn_error, best_model_state, start_state = train_test_loop(
                     train_loader, vldtn_loader, model, loss_fn, optimizer, epochs, 
                     early_stop=es, 
-                    weights=None #if (window_num == 0 or p == 0 or fold == 0) else best_model_window
+                    # Only use the prior window model parameters if hyper-paramater grid is not testing different model layer configurations
+                    weights=None if len(args.layer_width) != 1 else best_model_window #TO DO - CHECK WHEN THIS SHOULD BE NONE SO IS NOT CONTAMINATED BY PRIOR FOLDS, EACH FOLD SHOULD HAVE A COLD START?
                     )
                 
                 vldtn_error_fold.append(vldtn_error[-1:][0])  # list of val error for each fold
@@ -445,7 +448,12 @@ def main(args):
         # Track model states
         best_model_window = best_model_param[best_hyper_param_idx]
         start_states.append(start_state)
-
+        
+        # Instantiate test model (required if layer_width differs across best model and that per last hyper parameter loop)
+        layer_widths = grid[best_hyper_param_idx][0]
+        layer_widths = [len(xcols)] + layer_widths
+        model = NeuralNetwork(layer_widths).to(device)
+        
         # Load state dict
         model.load_state_dict(best_model_window)
         model.eval()
@@ -485,12 +493,37 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="m03")
-    parser.add_argument("-y", "--layer_width", nargs="?", default=[5,1], type=list_of_ints)
-    parser.add_argument("-e", "--epochs"     , nargs="?", default=100, type=int)
-    parser.add_argument("-l", "--loss"       , nargs="?", default='mse', choices=['mse', 'mae', 'linex'], type=str)
+    # https://gist.github.com/matthewfeickert/3b7d30e408fe4002aac728fc911ced35
+    cli_parser = argparse.ArgumentParser(
+        description='configuration arguments provided at run time from the CLI'
+    )
+    cli_parser.add_argument(
+        '-c',
+        '--config_file',
+        dest='config_file',
+        type=str,
+        default=None,
+        help='config file',
+    )
+
+    args, unknown = cli_parser.parse_known_args()
+
+    parser = argparse.ArgumentParser(parents=[cli_parser], add_help=False)
+
+    if args.config_file is not None:
+        if '.json' in args.config_file:
+            config = json.load(open(args.config_file))
+            parser.set_defaults(**config)
+
+            [
+                parser.add_argument(arg)
+                for arg in [arg for arg in unknown if arg.startswith('--')]
+                if arg.split('--')[-1] in config
+            ]
+
     args = parser.parse_args()
     main(args)
- 
+
+# cd ~/numpyro_models/numpyro_models
 # conda activate pytorch_pyro
-# python ~/numpyro_models/numpyro_models/m03.py -y 3,1 -e 5 -l mse
+# python ~/numpyro_models/numpyro_models/m03.py -c m03_config.json
