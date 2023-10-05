@@ -47,27 +47,34 @@ def get_data(filepath, date_filter):
 
 
 def gen_stock_data(n_sectors=4, n_stocks=5, months=24):
+    # Create sector and stock labels
     sect = [chr(x) for x in range(65, 65 + n_sectors)]
     sect = [item for item in sect for _ in range(n_stocks)]
     stocks = [''.join([r.choice(ascii_lowercase) for _ in range(3)]) for _ in range(n_sectors*n_stocks)]  
     df = pd.DataFrame({"sector" : sect, "stock" : stocks})
+    # Create list of dates
     dates = pd.date_range(dt.datetime(2020,1,1), periods=months, freq="M").tolist()
+    # Create market state by date, being sin wave of 1.5 wavelengths, eg. nil > peak > nil > trough > nil > peak > nil,
+    # and cross join to stocks / sectors
     df = pd.merge(df, pd.DataFrame({"date_stamp" : dates, "mkt_state" : np.sin(np.arange(months)/(months/10))}), how="cross")
+    # Create sector state, being value between 0.1 and 0.2 specific to each sector (TO DO: advanced - vary over time)
     df["sect_state"] = np.linspace(0.1, 0.2, n_sectors).repeat(months*n_stocks)
-    # Stock specific component to stock return depends on mkt_state and sect_state and stock_state
+    # Create multiple stock specific states (this could be ROE or leverage)
     df["stock_state0"] = np.where(df["date_stamp"] < dates[int(months/2)], 0.1, 0.2) 
     df["stock_state1"] = np.where(df["date_stamp"] < dates[int(months/3)], 0.1, 0.2) 
+    # Stock return is function of the stock state, ie., a loading or beta on that state
+    # The beta itself is a function of the market state and sector
     df["stock_rtn_beta"] = np.select(
         [df["sect_state"] == 0.2,
          df["sect_state"] == 0.1],
         [0.05, 
          0.03],
         default=0)
+    # component to stock return, dependent upon mkt_state, sect_state and stock_state
     df["stock_mean_rtn"] = 0.2 + df["stock_rtn_beta"] * df["stock_state0"] + 0.1 * df["stock_state1"]
     df["stock_stdev_rtn"] = np.where(df["stock_state0"] <= 0.1, 0.02, 0.04) 
     df["stock_rtn"] = np.random.normal(loc=df["stock_mean_rtn"], scale=df["stock_stdev_rtn"])
     df["stock_rtn_binary"] = np.where(df["stock_rtn"] < np.median(df["stock_rtn"]), 0, 1)
-
     return df
 
 
@@ -188,7 +195,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Linear regression")
+    parser = argparse.ArgumentParser(description="BNN")
     parser.add_argument("-d", "--date_filter", nargs="?", default="2022-12-31", type=str)
     parser.add_argument("-f", "--filepath"   , nargs="?", default="/c/Users/brent/Documents/R/Misc_scripts/stocks.csv", type=str)
     parser.add_argument("-w", "--num_warmup" , nargs="?", default=1000, type=int)

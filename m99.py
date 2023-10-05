@@ -196,3 +196,31 @@ x = [1, .5]
 x1 = np.array(x)[:,None].T
 x2 = np.random.normal(size=10)[:,None]
 y = x2.dot(x1)
+
+
+
+# https://github.com/MaxRobinsonTheGreat/mandelbrotnn/blob/main/src/models.py
+import numpy as np
+xmin=-2.5
+xmax=1.0
+ymin=-1.1
+ymax=1.1
+x_size=10
+y_size=10
+
+if x_size is not None:
+    x_m = x_size/(xmax - xmin)
+else: 
+    x_m = 1.
+if y_size is not None:
+    y_m = y_size/(ymax - ymin)
+else: 
+    y_m = 1.
+x_b = -(xmin + xmax)*x_m/2 - 1 
+y_b = -(ymin + ymax)*y_m/2
+m = np.array([x_m, y_m])
+b = np.array([x_b, y_b])
+
+# Data
+x = np.random.normal(size=10)[:,None]
+m*x + b
