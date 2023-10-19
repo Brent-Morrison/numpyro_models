@@ -58,21 +58,23 @@ def gen_stock_data(n_sectors=4, n_stocks=5, months=24):
     # and cross join to stocks / sectors
     df = pd.merge(df, pd.DataFrame({"date_stamp" : dates, "mkt_state" : np.sin(np.arange(months)/(months/10))}), how="cross")
     # Create sector state, being value between 0.1 and 0.2 specific to each sector (TO DO: advanced - vary over time)
-    df["sect_state"] = np.linspace(0.1, 0.2, n_sectors).repeat(months*n_stocks)
-    # Create multiple stock specific states (this could be ROE or leverage)
+    df["sect_state0"] = np.linspace(0.1, 0.2, n_sectors).repeat(months*n_stocks)
+    # Create slowly changing stock specific state (this could represent ROE, leverage, volatility, etc.)
     df["stock_state0"] = np.where(df["date_stamp"] < dates[int(months/2)], 0.1, 0.2) 
-    df["stock_state1"] = np.where(df["date_stamp"] < dates[int(months/3)], 0.1, 0.2) 
     # Stock return is function of the stock state, ie., a loading or beta on that state
-    # The beta itself is a function of the market state and sector
-    df["stock_rtn_beta"] = np.select(
-        [df["sect_state"] == 0.2,
-         df["sect_state"] == 0.1],
-        [0.05, 
-         0.03],
-        default=0)
-    # component to stock return, dependent upon mkt_state, sect_state and stock_state
-    df["stock_mean_rtn"] = 0.2 + df["stock_rtn_beta"] * df["stock_state0"] + 0.1 * df["stock_state1"]
-    df["stock_stdev_rtn"] = np.where(df["stock_state0"] <= 0.1, 0.02, 0.04) 
+    # The beta itself is a function of the market state
+    df["mkt_state_diff"] = df.groupby("stock").mkt_state.diff(periods=1)
+    df["mkt_state_sign"] = np.sign(df["mkt_state"])
+    df["stock_state0_beta"] = np.select(
+        [(df["mkt_state_diff"] > 0) & (np.sign(df["mkt_state"]) > 0),
+         (df["mkt_state_diff"] > 0) & (np.sign(df["mkt_state"]) < 0),
+         (df["mkt_state_diff"] < 0) & (np.sign(df["mkt_state"]) > 0),
+         (df["mkt_state_diff"] < 0) & (np.sign(df["mkt_state"]) < 0)],
+        [0.4, 0.8, -0.8, -0.4],
+        default=0.4)
+    # Average of stock return, dependent upon mkt_state, sect_state and stock_state
+    df["stock_mean_rtn"] = df["stock_state0_beta"] * df["stock_state0"]
+    df["stock_stdev_rtn"] = df["sect_state0"] / 2 
     df["stock_rtn"] = np.random.normal(loc=df["stock_mean_rtn"], scale=df["stock_stdev_rtn"])
     df["stock_rtn_binary"] = np.where(df["stock_rtn"] < np.median(df["stock_rtn"]), 0, 1)
     return df
