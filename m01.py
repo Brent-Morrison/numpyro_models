@@ -14,7 +14,9 @@ import pickle
 
 import numpy as np
 import pandas as pd
+import datetime as dt
 
+# https://forum.pyro.ai/t/cant-get-numpyro-to-use-gpu-on-linux/4479
 
 # Get data -----------------------------------------------------------------------------------------------------------------
 
@@ -35,6 +37,17 @@ def get_data(filepath, date_filter):
 
     return X, Y, idx
 
+
+def make_data(samples=25, intercept=1, coefficients=[2, 3], noise=0.1):
+    
+    X = np.random.rand(samples, len(coefficients))
+    coefficients = np.array(coefficients)
+    Y = np.dot(X, coefficients) + intercept
+    Y = Y + np.random.normal(scale=noise, size=Y.shape)
+
+    idx = pd.date_range(dt.datetime(2020, 1, 1), periods=samples, freq="M").values
+
+    return X, Y, idx
 
 
 # Define model -------------------------------------------------------------------------------------------------------------
@@ -59,7 +72,7 @@ def model(X=None, Y=None):
         mu = 0.0
 
     # Likelihood
-    with numpyro.plate("data", len(Y)):
+    with numpyro.plate("data", len(X)): #len(Y)):
         numpyro.sample("Y", dist.Normal(mu, sigma), obs=Y)
 
 
@@ -96,7 +109,8 @@ def predict(data, rng_key):
     
     predictive = Predictive(model, posterior_samples=m01_post_samples)
 
-    preds = predictive(rng_key, Y=data)["Y"]
+    #preds = predictive(rng_key, Y=data)["Y"]
+    preds = predictive(rng_key, X=data, Y=None)["Y"]
     means = np.mean(preds, axis=0)
     quantiles = np.percentile(preds, [5.0, 95.0], axis=0)
     
@@ -112,7 +126,10 @@ def main(args):
     #date_filter = args.date_filter
 
     # Training data
-    X, Y, idx = get_data(filepath=args.filepath, date_filter=args.date_filter)
+    if args.test:
+        X, Y, idx = make_data(coefficients=[2,3])
+    else:
+        X, Y, idx = get_data(filepath=args.filepath, date_filter=args.date_filter)
 
     # do inference
     rng_key, rng_key_predict = random.split(random.PRNGKey(0))
@@ -120,6 +137,9 @@ def main(args):
 
     # do prediction
     means, quantiles = predict(data=X, rng_key=rng_key_predict)  # TO DO - this Y should be new data
+    print("Mean", means.shape)
+    print("Quantile", quantiles.shape)
+    print("Index", idx.shape)
     pd.DataFrame({'date_stamp': idx, 'Yhat': means, 'lower': quantiles[0, :], 'upper': quantiles[1, :]}) \
         .to_csv('/c/Users/brent/Documents/R/Misc_scripts/m01_preds.csv')
 
@@ -127,6 +147,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Linear regression")
+    parser.add_argument("-t", "--test"       , nargs="?", default=False, type=bool)
     parser.add_argument("-d", "--date_filter", nargs="?", default="2022-12-31", type=str)
     parser.add_argument("-f", "--filepath"   , nargs="?", default="/c/Users/brent/Documents/R/Misc_scripts/stocks.csv", type=str)
     parser.add_argument("-w", "--num_warmup" , nargs="?", default=1000, type=int)
@@ -144,4 +165,5 @@ if __name__ == "__main__":
 # conda activate pytorch_pyro
 # cd ~/numpyro_models/numpyro_models
 # python m01.py -d 2021-12-31 -f /c/Users/brent/Documents/R/Misc_scripts/stocks.csv
+# python m01.py -t True
 # conda activate pytorch_pyro && python ~/numpyro_models/numpyro_models/m01.py

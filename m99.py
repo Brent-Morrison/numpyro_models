@@ -98,55 +98,14 @@ expand_grid(loss_fn=["linex", "mse"])
 expand_grid(loss_fn=["linex", "mse"])["layer_width"][0]
 
 
-# Synthetic stock data
-import numpy as np
-import pandas as pd
-import datetime as dt
-import random as r
-from string import ascii_lowercase
-import matplotlib.pyplot as plot
+# ---------------------------------------------------------------------------------------------------------
+# Synthetic stock data (m04.py)
 
-def gen_stock_data(n_sectors=4, n_stocks=5, months=36):
-    sect = [chr(x) for x in range(65, 65 + n_sectors)]
-    sect = [item for item in sect for _ in range(n_stocks)]
-    stocks = [''.join([r.choice(ascii_lowercase) for _ in range(3)]) for _ in range(n_sectors*n_stocks)]  
-    df = pd.DataFrame({"sector" : sect, "stock" : stocks})
-    dates = pd.date_range(dt.datetime(2020,1,1), periods=months, freq="M").tolist()
-    df = pd.merge(df, pd.DataFrame({"date_stamp" : dates, "mkt_state" : np.sin(np.arange(months)/(months/10))}), how="cross")
-    # Market specific component to stock return depends on mkt_state
-    df["mkt_rtn_beta"] = np.where(df["mkt_state"] < 0, -0.1, 0.2) 
-    df["mkt_mean_rtn"] = df["mkt_rtn_beta"] * df["mkt_state"]
-    df["mkt_stdev_rtn"] = np.where(df["mkt_state"] < 0, 0.05, 0.02) 
-    df["mkt_rtn"] = np.random.normal(loc=df["mkt_mean_rtn"], scale=df["mkt_stdev_rtn"])
-    # Sector specific component to stock return depends on mkt_state and sect_state  
-    df["sect_state"] = np.linspace(0.1, 0.2, n_sectors).repeat(months*n_stocks)
-    df["sect_rtn_beta"] = np.where((df["mkt_state"] < 0) & (df["sect_state"] <= 0.5), 0.1, -0.1) 
-    df["sect_mean_rtn"] = df["sect_rtn_beta"] * df["sect_state"]
-    df["sect_stdev_rtn"] = np.where(df["sect_state"] <= 0.1, 0.02, 0.04) 
-    df["sect_rtn"] = np.random.normal(loc=df["sect_mean_rtn"], scale=df["sect_stdev_rtn"])
-    # Stock specific component to stock return depends on mkt_state and sect_state and stock_state
-    df["stock_state"] = np.where(df["date_stamp"] < dates[int(months/2)], 0.1, 0.2) 
-    df["stock_state1"] = np.where(df["date_stamp"] < dates[int(months/3)], 0.1, 0.2) 
-    df["stock_rtn_beta"] = np.select(
-        [(df["mkt_state"] < 0  ) & (df["sect_state"] == 0.2),
-         (df["mkt_state"] < 0  ) & (df["sect_state"] == 0.1),
-         (df["mkt_state"] > 0.5) & (df["sect_state"] >= 0  )],
-         [0.05, 
-          0.02,
-          -0.02],
-          default=0)
-    df["stock_mean_rtn"] = df["stock_rtn_beta"] * df["stock_state"]
-    df["stock_stdev_rtn"] = np.where(df["stock_state"] <= 0.1, 0.02, 0.04) 
-    df["stock_rtn"] = np.random.normal(loc=df["stock_mean_rtn"], scale=df["stock_stdev_rtn"])
+df = gen_stock_data()[["date_stamp", "mkt_state", "sector", "stock", "stock_state0", "stock_rtn"]]
 
-    # Stock return
-    df["stock_rtn"] = df["mkt_rtn"] + df["sect_rtn"] + df["stock_rtn"]
-    df["stock_rtn_binary"] = np.where(df["stock_rtn"] < 0, 0, 1)
+X, Y, idx = get_data(filepath="/c/Users/brent/Documents/R/Misc_scripts/stocks.csv", date_filter="2022-12-31")
 
 
-    return df
-
-df = gen_stock_data()
 
 
 months=36

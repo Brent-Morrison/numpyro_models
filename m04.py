@@ -1,5 +1,9 @@
 """
 Hierachical bayesian neural network
+https://github.com/probml/pyprobml/blob/master/notebooks/misc/bnn_hierarchical_orginal_numpyro.ipynb
+https://colab.research.google.com/github/probml/pyprobml/blob/master/notebooks/book1/13/bnn_hierarchical_numpyro.ipynb
+https://colab.research.google.com/drive/1cF4gDHi8D5M-wvewYnO7K10EAnuI0_iZ#scrollTo=FHw48O2rllth
+https://twiecki.io/blog/2018/08/13/hierarchical_bayesian_neural_network/
 https://pmelchior.net/blog/bayesian-inference-three-ways.html
 """
 
@@ -60,7 +64,7 @@ def gen_stock_data(n_sectors=4, n_stocks=5, months=24):
     # Create sector state, being value between 0.1 and 0.2 specific to each sector (TO DO: advanced - vary over time)
     df["sect_state0"] = np.linspace(0.1, 0.2, n_sectors).repeat(months*n_stocks)
     # Create slowly changing stock specific state (this could represent ROE, leverage, volatility, etc.)
-    df["stock_state0"] = np.where(df["date_stamp"] < dates[int(months/2)], 0.1, 0.2) 
+    df["stock_state0"] = np.where(df["date_stamp"] < dates[int(months/2)], 1, 2) 
     # Stock return is function of the stock state, ie., a loading or beta on that state
     # The beta itself is a function of the market state
     df["mkt_state_diff"] = df.groupby("stock").mkt_state.diff(periods=1)
@@ -72,11 +76,14 @@ def gen_stock_data(n_sectors=4, n_stocks=5, months=24):
          (df["mkt_state_diff"] < 0) & (np.sign(df["mkt_state"]) < 0)],
         [0.4, 0.8, -0.8, -0.4],
         default=0.4)
-    # Average of stock return, dependent upon mkt_state, sect_state and stock_state
+    # Mean return, dependent upon mkt_state (via varying beta) and stock_state
     df["stock_mean_rtn"] = df["stock_state0_beta"] * df["stock_state0"]
-    df["stock_stdev_rtn"] = df["sect_state0"] / 2 
+    # Variance of return dependent on sector membership 
+    df["stock_stdev_rtn"] = df["sect_state0"] 
     df["stock_rtn"] = np.random.normal(loc=df["stock_mean_rtn"], scale=df["stock_stdev_rtn"])
-    df["stock_rtn_binary"] = np.where(df["stock_rtn"] < np.median(df["stock_rtn"]), 0, 1)
+    df["stock_rtn_binary"] = np.where(df["stock_rtn"] < 0, 0, 1)
+    df = df[["date_stamp", "mkt_state", "sector", "sect_state0", "stock",
+            "stock_state0", "stock_state0_beta", "stock_rtn", "stock_rtn_binary"]]
     return df
 
 
@@ -84,9 +91,9 @@ def gen_stock_data(n_sectors=4, n_stocks=5, months=24):
 # Define model -------------------------------------------------------------------------------------------------------------
 
 def model(layer_sizes, X, Y=None):
-    """X must have 3 dimension
-    The first dimension is the groups, second the rows 
-    and third the columns
+    """
+    X must have 3 dimensions
+    The first dimension is the groups / levels, the second the rows, and third the columns
     """
     D_C, _, D_X = X.shape
     D_Y = 1
@@ -105,7 +112,8 @@ def model(layer_sizes, X, Y=None):
     # Data to new variable
     z = X 
 
-    # Size is the number of groups, dim=-3 refers to left most dimension in ndim=3 array 
+    # size is the number of groups
+    # dim=-3 refers to left most dimension in ndim=3 array (ref above, X must have 3 dimensions).
     with numpyro.plate("plate_i", size=D_C, dim=-3): 
         for k, (D_in, D_out, w_c, w_c_std) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:], w_mean, w_std)):
             w_all = numpyro.sample(f"w{k}_all", dist.Normal(jnp.zeros((1, D_in, D_out)), jnp.ones((1, D_in, D_out))))
@@ -115,7 +123,9 @@ def model(layer_sizes, X, Y=None):
     z = z.squeeze(-1) # remove the last dimension
 
     # Bernoulli likelihood <= Binary classification
-    Y = numpyro.sample("Y", dist.Bernoulli(logits=z), obs=Y)
+    #Y = numpyro.sample("Y", dist.Bernoulli(logits=z), obs=Y)
+    # Continuous case
+    Y = numpyro.sample("Y", dist.Normal(z, w_c_std), obs=Y)
 
 
 
@@ -165,31 +175,40 @@ def main(args):
     #date_filter = dt.datetime.strptime(args.date_filter, '%Y-%m-%d').date()
     #date_filter = args.date_filter
 
+    # Draw model
+    # numpyro.render_model(model, model_args=([5,5], X_train))
+
     # Training data
-    n_sectors = 10
-    n_stocks = 100
-    months = 36
-    df = gen_stock_data(n_sectors, n_stocks, months)
+    n_sectors = 4
+    n_stocks = 5
+    months = 24
+    df = gen_stock_data(n_sectors, n_stocks, months)[["date_stamp", "mkt_state", "sector", "stock", "stock_state0", "stock_rtn"]]
 
     le = LabelEncoder()
     df['sector_tf'] = le.fit_transform(df['sector'].values)
-    X_train = df[["stock_state0","stock_state1"]].values
-    Y_train = df[["stock_rtn_binary"]].values
+    X_train = df[["stock_state0", "mkt_state"]].values
+    Y_train = df[["stock_rtn"]].values
 
-
+    # Reshape X so that the first dimension is the group / level
+    # The "//"" operator divides and rounds the result down to the nearest integer
     X_train = X_train.reshape(n_sectors, X_train.shape[0]//n_sectors, -n_sectors)
     Y_train = Y_train.reshape(n_sectors, Y_train.shape[0]//n_sectors)
     X_test  = X_train
 
+    # Trace inspection
+    with numpyro.handlers.seed(rng_seed=1):
+        trace = numpyro.handlers.trace(model).get_trace(layer_sizes=[5,5], X=X_train, Y=Y_train)
+    print(numpyro.util.format_shapes(trace))
+    
     # Prior predictive check grid
     grid = jnp.mgrid[0.1:0.2:100j, 0.1:0.2:100j].reshape((2, -1)).T
     grid_3d = jnp.repeat(grid[None, ...], n_sectors, axis=0)
 
-    # do inference
+    # Do inference
     rng_key, rng_key_predict = random.split(random.PRNGKey(0))
     sample(model, args, rng_key, layer_sizes=[5,5], X=X_train, Y=Y_train)
 
-    # do prediction
+    # Do prediction
     means, quantiles = predict(rng_key=rng_key_predict, layer_sizes=[5,5], X=X_test)
     pd.DataFrame({'date_stamp': df["date_stamp"], 'Yhat': means.reshape(-1), 'lower': quantiles[0, :].reshape(-1), 'upper': quantiles[1, :].reshape(-1)}) \
         .to_csv('/c/Users/brent/Documents/R/Misc_scripts/m04_preds.csv')
