@@ -9,7 +9,8 @@ INSTANCE_NAME=pytorch-vm
 LOCATION=australia-southeast1
 ZONE=australia-southeast1-a
 BUCKET_NAME=brent_test_bucket
-OBJECT_LOCATION=/c/Users/brent/Documents/R/Misc_scripts/m01_preds.csv
+#OBJECT_LOCATION=`jq -r '.source_file' m03_config.json`
+OBJECT_LOCATION=/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv
 DELETE=false
 
 # Set the project 
@@ -32,4 +33,4 @@ gcloud compute instances create ${INSTANCE_NAME} \
     --maintenance-policy=TERMINATE \
     --accelerator="type=nvidia-tesla-p4,count=1" \
     --metadata="install-nvidia-driver=True" \
-    --metadata-from-file=startup-script=startup.sh
+    --metadata-from-file=startup-script=m99_pytorch_vm_startup.sh

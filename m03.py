@@ -3,7 +3,7 @@ import json
 from copy import deepcopy
 from collections import OrderedDict
 import io
-from google.cloud import storage # TO DO - add this to env
+from google.cloud import storage
 import numpy as np
 import pandas as pd
 import torch
@@ -107,8 +107,6 @@ def get_data(file_path, date_filter, ycols, xcols, bucket_name=None, source_file
     df = df_raw[df_raw['date_stamp'] >= date_filter].reset_index(drop=True).copy()
     ticker = ['symbol']
     date = ['date_stamp']
-    #ycols = ['fwd_rtn']
-    #xcols = ['rtn_ari_1m', 'rtn_ari_3m', 'rtn_ari_12m', 'perc_range_12m', 'perc_pos_12m', 'rtn_from_high_12m', 'vol_ari_60d']
     df.sort_values(by=[ticker[0], date[0]], ascending=[True, True], inplace=True)
     df = df.loc[:, date+ticker+ycols+xcols].copy()
     df.dropna(inplace=True)
@@ -349,10 +347,13 @@ def main(args):
     torch.set_printoptions(linewidth=120)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"\nUsing {device} device\n")
+
+    with open("m03_config.json") as j:
+        args0 = json.load(j)
     
     # Data
     ycols = ['fwd_rtn']
-    xcols = args.xcols
+    xcols = args0["xcols"]   #args.xcols
     df = get_data(
         file_path=args.source_file, 
         date_filter="2016-12-31", 
@@ -569,8 +570,9 @@ if __name__ == "__main__":
             ]
 
     args = parser.parse_args()
+
     main(args)
 
 # cd ~/numpyro_models/numpyro_models
 # conda activate pytorch_pyro
-# python3 ~/numpyro_models/numpyro_models/m03.py -c m03_config.json
+# python3 m03.py -c m03_config.json
