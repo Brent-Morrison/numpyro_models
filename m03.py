@@ -2,6 +2,8 @@ import argparse
 import json
 from copy import deepcopy
 from collections import OrderedDict
+import io
+from google.cloud import storage # TO DO - add this to env
 import numpy as np
 import pandas as pd
 import torch
@@ -27,6 +29,7 @@ def expand_grid0(*args):
         grid = [[x, y, z] for x in args[0] for y in args[1] for z in args[2]]
     return grid
 
+
 def expand_grid(layer_width=[[5,1]], epochs=[20], es_patience=[10], learning_rate=[1e-2,1e-3], loss_fn=["linex"]):
     grid = [[x, y, z, a, b] \
         for x in layer_width   \
@@ -36,6 +39,37 @@ def expand_grid(layer_width=[[5,1]], epochs=[20], es_patience=[10], learning_rat
         for b in loss_fn       ]
     return grid
 
+
+# GCP functions
+
+def gcp_csv_to_df(bucket_name, source_file_name):
+    """
+    Grab CSV file from GCP Storage and return as DF
+    File extension is NOT required for parameter "source_file_name" (TO DO - check this)
+    """
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(source_file_name)
+    data = blob.download_as_bytes()
+    df = pd.read_csv(io.BytesIO(data))
+    return df
+
+def write_df_gcs_csv(df, bucket_name, blob_name):
+    """
+    Use pandas to interact with GCS using file-like IO
+    File extension IS required for parameter "blob_name"
+    The ID of your GCS bucket: bucket_name = "your-bucket-name"
+    The ID of your new GCS object: blob_name = "storage-object-name"
+    """
+
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    with blob.open("w") as f:
+        f.write(df.to_csv(index=False))
+
+    print(f"Wrote csv with pandas with name {blob_name} from bucket {bucket_name}.")
 
 
 # Linear exponential loss --------------------------------------------------------------------------------------------------
@@ -56,7 +90,7 @@ class LinexLoss(nn.Module):
 
 # Get data -----------------------------------------------------------------------------------------------------------------
 
-def get_data(file_path, date_filter, ycols, xcols):
+def get_data(file_path, date_filter, ycols, xcols, bucket_name=None, source_file_name=None): # TO DO - toggle getting data from GCP storage and locally
     """Load a data frame from csv file. Assumes presence of 'fwd_rtn' and 'date_stamp' columns
 
     Args:
@@ -65,7 +99,10 @@ def get_data(file_path, date_filter, ycols, xcols):
     """
     #file_path = "/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv"
     #file_path = "https://raw.githubusercontent.com/Brent-Morrison/Misc_scripts/master/stock_data.csv"
-    df_raw = pd.read_csv(file_path)
+    if bucket_name is None:
+        df_raw = pd.read_csv(file_path)
+    else:
+        df_raw = gcp_csv_to_df(bucket_name, source_file_name)
     df_raw['date_stamp'] = pd.to_datetime(df_raw['date_stamp'])#, format="%Y/%m/%d")
     df = df_raw[df_raw['date_stamp'] >= date_filter].reset_index(drop=True).copy()
     ticker = ['symbol']
@@ -316,7 +353,14 @@ def main(args):
     # Data
     ycols = ['fwd_rtn']
     xcols = args.xcols
-    df = get_data(file_path="/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv", date_filter="2016-12-31", xcols=xcols, ycols=ycols)
+    df = get_data(
+        file_path=args.source_file, 
+        date_filter="2016-12-31", 
+        xcols=xcols, 
+        ycols=ycols,
+        bucket_name=None if args.bucket_name == "None" else args.bucket_name,
+        source_file_name=None if args.source_file_name == "None" else args.source_file_name
+        )
     date = 'date_stamp'
     dataset = DFLoader(df, date, ycols, xcols)
 
@@ -489,7 +533,10 @@ def main(args):
     
     # Aggregate performance metrics & save
     oos_pred_df = pd.concat(oos_pred_list)
-    oos_pred_df.to_csv('/c/Users/brent/Documents/R/Misc_scripts/m03_preds.csv')
+    if args.bucket_name == "None":
+        oos_pred_df.to_csv(args.destination_file)  # TO DO - toggle write to local vs GCP storage 
+    else:
+        write_df_gcs_csv(oos_pred_df, "brent_test_bucket", "output.csv")
 
 
 if __name__ == "__main__":
@@ -526,4 +573,4 @@ if __name__ == "__main__":
 
 # cd ~/numpyro_models/numpyro_models
 # conda activate pytorch_pyro
-# python ~/numpyro_models/numpyro_models/m03.py -c m03_config.json
+# python3 ~/numpyro_models/numpyro_models/m03.py -c m03_config.json

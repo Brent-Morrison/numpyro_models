@@ -5,4 +5,8 @@
 	,"learning_rate"	:	[1e-2, 1e-3]
 	,"loss_fn"       	:	["linex"]
 	,"xcols"       		:	["rtn_ari_1m", "rtn_ari_3m", "rtn_ari_12m", "perc_range_12m", "perc_pos_12m", "rtn_from_high_12m", "vol_ari_60d"]
+	,"source_file"		:	"/c/Users/brent/Documents/R/Misc_scripts/e01/02-data_01-training.csv"
+	,"bucket_name"		:	"None"
+	,"source_file_name"	:	"None"
+	,"destination_file" :	"/c/Users/brent/Documents/R/Misc_scripts/m03_preds1.csv"
 }
